@@ -76,7 +76,7 @@ class Encoder(nn.Module):
                         nn.BatchNorm2d(256),
                         nn.LeakyReLU()
                     )
-
+        self.flatten = nn.Flatten()
         # Batch x 256 X 2 x 2
         self.mu = nn.Linear(1024, 1024)
         self.var = nn.Linear(1024, 1024)
@@ -87,7 +87,7 @@ class Encoder(nn.Module):
         x = self.conv2(x)
         x = self.conv3(x)
         x = self.conv4(x)
-        x = nn.Flatten(x)
+        x = self.flatten(x)
         z_mu = self.mu(x)
         z_var = self.var(x)
 
@@ -110,7 +110,7 @@ class Decoder(nn.Module):
         # Batch x 1024 x 1 x 1
         self.deconv1 = nn.Sequential(
                         nn.ConvTranspose2d(1024, 128, 4),
-                        nn.BatchNorm2d(256),
+                        nn.BatchNorm2d(128),
                         nn.LeakyReLU()
                     )
 
@@ -162,17 +162,19 @@ class VAE(nn.Module):
         # sample from the distribution having latent parameters z_mu, z_var
         z = z_mu + z_var * torch.randn_like(z_var)
 
+        z = z.view(-1, 1024, 1, 1)
+
         # decode
         predicted = self.dec(z)
 
-        return predicted, z_mu, z_var
+        return predicted
 
 class VAEDataset(Dataset):
-    def __init__(self, size=65536):
+    def __init__(self, size=19200):
         self.img = []
         self.size = size
     def __getitem__(self, index):
-        return np.copy(self.img[index]), np.copy(self.img[index])
+        return self.img[index].clone(), self.img[index].clone()
 
     def __len__(self):
         return len(self.img)
@@ -200,6 +202,7 @@ def collect_data(dataset):
             dataset.push(img)
             pbar.update()
 
+    pbar.close()
     env.close()
 
     
@@ -209,7 +212,7 @@ def train_VAE(dataset):
     optimizer = torch.optim.AdamW(network.parameters())
 
     for i in range(5):
-        data_loader = DataLoader(dataset, 1024, shuffle=True)
+        data_loader = DataLoader(dataset, 512, shuffle=True)
         total_loss = 0
         for X, y in data_loader:
             X, y = X.to(device), y.to(device)
@@ -221,10 +224,10 @@ def train_VAE(dataset):
             total_loss += loss.item()
             loss.backward()
             optimizer.step()
-        print('loss: %.4f' % total_loss)
+        print('loss: %.3f' % total_loss)
     
             
 if __name__ == '__main__':
-    dataset = Dataset()
+    dataset = VAEDataset()
     collect_data(dataset)
     train_VAE(dataset)
