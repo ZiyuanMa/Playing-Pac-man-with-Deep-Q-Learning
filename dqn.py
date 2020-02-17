@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=1):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0):
         super().__init__()
         self.block = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding),
@@ -34,7 +34,7 @@ class ConvNet(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv1 = ConvBlock(4, config.kernel_num, 3)
+        self.conv1 = ConvBlock(3, 32, 10, 5)
         self.conv_blocks = nn.ModuleList([ConvBlock(config.kernel_num, config.kernel_num, 3) for _ in range(8)])
         # output 2*2*64
 
