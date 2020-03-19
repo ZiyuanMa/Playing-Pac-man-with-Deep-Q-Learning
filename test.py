@@ -23,11 +23,11 @@ trans = transforms.Compose([
     # transforms.Normalize(mean = (0.5, 0.5, 0.5), std = (0.5, 0.5, 0.5)),
 ])
 
-def test(args):
-    env = gym.make(args.env_name)
-    network = CNN(config.input_shape, env.action_space.n, 1, True)
-    if args.checkpoint:
-        network.load_state_dict(torch.load(args.checkpoint+'.checkpoint'))
+def test(env_name, checkpoint):
+    env = gym.make(env_name)
+    network = CNN(config.input_shape, env.action_space.n, config.atom_num, config.dueling)
+    if checkpoint:
+        network.load_state_dict(torch.load(checkpoint+'.checkpoint')[0])
     else:
         last_checkpoint = config.save_interval
         while os.path.exists('./'+str(last_checkpoint)+'.checkpoint'):
@@ -35,7 +35,7 @@ def test(args):
 
         last_checkpoint -= config.save_interval
 
-        network.load_state_dict(torch.load(str(last_checkpoint)+'.checkpoint'))
+        network.load_state_dict(torch.load(str(last_checkpoint)+'.checkpoint')[0])
 
 
     obs = env.reset()
@@ -60,6 +60,7 @@ def test(args):
 
 
 if __name__ == '__main__':
+    test(args.env_name, args.checkpoint)
     print(args.checkpoint)
 
 
