@@ -59,12 +59,6 @@ trans = transforms.Compose([
 #     params.update(network=network, optimizer=optimizer)
 #     return params
 
-def create_model():
-    network = CNN(config.input_shape, policy_dim, params['atom_num'], params.pop('dueling'))
-    optimizer = Adam(network.parameters(), 1e-4, eps=1e-5)
-    return network, optimizer
-
-
 
 # def classic_control(env, **kwargs):
 #     in_dim = env.observation_space.shape[0]
@@ -150,54 +144,53 @@ class CNN(nn.Module):
             return logprobs
 
 
-class MLP(nn.Module):
-    def __init__(self, in_dim, out_dim, atom_num, dueling):
-        super().__init__()
-        self.atom_num = atom_num
-        self.feature = nn.Sequential(
-            Flatten(),
-            nn.Linear(in_dim, 64),
-            nn.Tanh(),
-            nn.Linear(64, 64),
-            nn.Tanh()
-        )
+# class MLP(nn.Module):
+#     def __init__(self, in_dim, out_dim, atom_num, dueling):
+#         super().__init__()
+#         self.atom_num = atom_num
+#         self.feature = nn.Sequential(
+#             Flatten(),
+#             nn.Linear(in_dim, 64),
+#             nn.Tanh(),
+#             nn.Linear(64, 64),
+#             nn.Tanh()
+#         )
 
-        self.q = nn.Linear(64, out_dim * atom_num)
-        if dueling:
-            self.state = nn.Linear(64, atom_num)
+#         self.q = nn.Linear(64, out_dim * atom_num)
+#         if dueling:
+#             self.state = nn.Linear(64, atom_num)
 
-        for _, m in self.named_modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+#         for _, m in self.named_modules():
+#             if isinstance(m, nn.Linear):
+#                 nn.init.xavier_uniform_(m.weight, 1)
+#                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x):
-        batch_size = x.size(0)
-        latent = self.feature(x)
-        qvalue = self.q(latent)
-        if self.atom_num == 1:
-            if hasattr(self, 'state'):
-                svalue = self.state(latent)
-                qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
-            return qvalue
-        else:
-            if hasattr(self, 'state'):
-                qvalue = qvalue.view(batch_size, -1, self.atom_num)
-                svalue = self.state(latent).unsqueeze(1)
-                qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
-            logprobs = log_softmax(qvalue, -1)
-            return logprobs
+#     def forward(self, x):
+#         batch_size = x.size(0)
+#         latent = self.feature(x)
+#         qvalue = self.q(latent)
+#         if self.atom_num == 1:
+#             if hasattr(self, 'state'):
+#                 svalue = self.state(latent)
+#                 qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
+#             return qvalue
+#         else:
+#             if hasattr(self, 'state'):
+#                 qvalue = qvalue.view(batch_size, -1, self.atom_num)
+#                 svalue = self.state(latent).unsqueeze(1)
+#                 qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
+#             logprobs = log_softmax(qvalue, -1)
+#             return logprobs
 
 
 
 def learn(  env, number_timesteps,
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-            save_path='./', save_interval=500000, ob_scale=config.ob_scale,
-            gamma=config.gamma, grad_norm=config.grad_norm,
-            double_q=config.double_q, param_noise=config.param_noise, dueling=config.dueling,
-            exploration_fraction=config.exploration_fraction, exploration_final_eps=config.exploration_final_eps,
-            batch_size=config.batch_size, train_freq=config.train_freq, learning_starts=config.learning_starts, target_network_update_freq=config.target_network_update_freq,
-            buffer_size=config.buffer_size, prioritized_replay=config.prioritized_replay, prioritized_replay_alpha=config.prioritized_replay_alpha,
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'), save_path='./', save_interval=config.save_interval,
+            ob_scale=config.ob_scale, gamma=config.gamma, grad_norm=config.grad_norm, double_q=config.double_q,
+            param_noise=config.param_noise, dueling=config.dueling, exploration_fraction=config.exploration_fraction,
+            exploration_final_eps=config.exploration_final_eps, batch_size=config.batch_size, train_freq=config.train_freq,
+            learning_starts=config.learning_starts, target_network_update_freq=config.target_network_update_freq, buffer_size=config.buffer_size,
+            prioritized_replay=config.prioritized_replay, prioritized_replay_alpha=config.prioritized_replay_alpha,
             prioritized_replay_beta0=config.prioritized_replay_beta0, atom_num=config.atom_num, min_value=config.min_value, max_value=config.max_value):
     """
     Papers:
@@ -229,22 +222,27 @@ def learn(  env, number_timesteps,
     max_value (float): max value in distributional RL
 
     """
-    policy_dim = env.action_space.n
-    network = CNN(config.input_shape, policy_dim, atom_num, dueling)
+    # create network and optimizer
+    network = CNN(config.input_shape, env.action_space.n, atom_num, dueling)
     optimizer = Adam(network.parameters(), 1e-4, eps=1e-5)
 
+    # create target network
     qnet = network.to(device)
     qtar = deepcopy(qnet)
+
+    # prioritized replay
     if prioritized_replay:
         buffer = PrioritizedReplayBuffer(buffer_size, device,
                                          prioritized_replay_alpha,
                                          prioritized_replay_beta0)
     else:
         buffer = ReplayBuffer(buffer_size, device)
+
     generator = _generate(device, env, qnet, ob_scale,
                           number_timesteps, param_noise,
                           exploration_fraction, exploration_final_eps,
                           atom_num, min_value, max_value)
+
     if atom_num > 1:
         delta_z = float(max_value - min_value) / (atom_num - 1)
         z_i = torch.linspace(min_value, max_value, atom_num).to(device)
@@ -252,8 +250,10 @@ def learn(  env, number_timesteps,
     infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
     start_ts = time.time()
     for n_iter in range(1, number_timesteps + 1):
+
         if prioritized_replay:
             buffer.beta += (1 - prioritized_replay_beta0) / number_timesteps
+            
         *data, info = generator.__next__()
         buffer.add(*data)
         for k, v in info.items():
@@ -268,18 +268,25 @@ def learn(  env, number_timesteps,
 
             if atom_num == 1:
                 with torch.no_grad():
+                    
+                    # choose max q index from next observation
                     if double_q:
                         b_a_ = qnet(b_o_).argmax(1).unsqueeze(1)
                         b_q_ = (1 - b_d) * qtar(b_o_).gather(1, b_a_)
                     else:
                         b_q_ = (1 - b_d) * qtar(b_o_).max(1, keepdim=True)[0]
+
                 b_q = qnet(b_o).gather(1, b_a)
+
                 abs_td_error = (b_q - (b_r + gamma * b_q_)).abs()
+
                 priorities = abs_td_error.detach().cpu().clamp(1e-6).numpy()
+
                 if extra:
                     loss = (extra[0] * huber_loss(abs_td_error)).mean()
                 else:
                     loss = huber_loss(abs_td_error).mean()
+
             else:
                 with torch.no_grad():
                     b_dist_ = qtar(b_o_).exp()
@@ -304,6 +311,7 @@ def learn(  env, number_timesteps,
             if grad_norm is not None:
                 nn.utils.clip_grad_norm_(qnet.parameters(), grad_norm)
             optimizer.step()
+
             if prioritized_replay:
                 buffer.update_priorities(extra[1], priorities)
 
@@ -354,8 +362,10 @@ def _generate(device, env, qnet, ob_scale,
             ob = scale_ob(np.expand_dims(o, 0), device, ob_scale)
 
             q = qnet(ob)
+
             if atom_num > 1:
                 q = (q.exp() * vrange).sum(2)
+                
             if not param_noise:
                 if random.random() < epsilon:
                     a = int(random.random() * action_dim)
@@ -389,6 +399,7 @@ def _generate(device, env, qnet, ob_scale,
         # take action in env
         o_, r, done, info = env.step(a)
         o_ = trans(o_).numpy()
+
         if info.get('episode'):
             infos = {
                 'eplenmean': info['episode']['l'],
