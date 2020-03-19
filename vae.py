@@ -12,7 +12,8 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 
 trans = transforms.Compose([
     transforms.ToPILImage(),
-    transforms.Resize((160,160)),
+    transforms.Grayscale(),
+    transforms.Resize((44, 44)),
     transforms.ToTensor(),
     # transforms.Normalize(mean = (0.5, 0.5, 0.5), std = (0.5, 0.5, 0.5)),
 ])
@@ -22,7 +23,7 @@ env = gym.make('MsPacman-v0')
 
 env.reset()
 for t in range(1):
-    # env.render()
+    env.render()
     
     obs, reward, done, info = env.step(env.action_space.sample()) # take a random action
     img = np.array(obs)
