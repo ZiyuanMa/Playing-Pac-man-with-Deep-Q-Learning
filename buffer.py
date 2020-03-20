@@ -10,6 +10,8 @@ import random
 import numpy as np
 import torch
 
+import config
+
 
 class SegmentTree(object):
     def __init__(self, capacity, operation, neutral_element):
@@ -183,15 +185,28 @@ class ReplayBuffer(object):
         self._next_idx = (self._next_idx + 1) % self._maxsize
 
     def _encode_sample(self, idxes):
-        b_o, b_a, b_r, b_o_, b_d = [], [], [], [], []
+        b_o, b_a, b_r, b_o_, b_d, b_steps = [], [], [], [], [], []
         b_extras = [[] for _ in range(len(self._storage[0]) - 5)]
         for i in idxes:
-            o, a, r, o_, d, *extras = self._storage[i]
+            o, a, r, post_obs, done, *extras = self._storage[i]
+
+
+            forward = 1
+            for j in range(1,config.forward_steps):
+                next_idx = (i+j) % self._maxsize
+                if next_idx != self._next_idx and not done:
+                    _, _, next_reward, post_obs, done, *extras = self._storage[next_idx]
+                    r += next_reward * config.gamma ** j
+                    forward += 1
+                else:
+                    break
+
             b_o.append(o.astype('float32'))
             b_a.append(a)
             b_r.append(r)
-            b_o_.append(o_.astype('float32'))
-            b_d.append(d)
+            b_o_.append(post_obs.astype('float32'))
+            b_d.append(done)
+            b_steps.append([forward])
             for j, extra in enumerate(extras):
                 b_extras[j].append(extra)
         res = (
@@ -200,6 +215,7 @@ class ReplayBuffer(object):
             torch.from_numpy(np.asarray(b_r)).to(self._device).float(),
             torch.from_numpy(np.asarray(b_o_)).to(self._device),
             torch.from_numpy(np.asarray(b_d)).to(self._device).float(),
+            torch.from_numpy(np.asarray(b_steps)).to(self._device).float(),
         ) + tuple(
             torch.from_numpy(np.asarray(b_extra)).to(self._device).float()
             for b_extra in b_extras

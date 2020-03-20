@@ -261,7 +261,7 @@ def learn(  env, number_timesteps,
 
         # update qnet
         if n_iter > learning_starts and n_iter % train_freq == 0:
-            b_o, b_a, b_r, b_o_, b_d, *extra = buffer.sample(batch_size)
+            b_o, b_a, b_r, b_o_, b_d, b_steps, *extra = buffer.sample(batch_size)
 
             b_o.mul_(ob_scale)
             b_o_.mul_(ob_scale)
@@ -278,7 +278,7 @@ def learn(  env, number_timesteps,
 
                 b_q = qnet(b_o).gather(1, b_a)
 
-                abs_td_error = (b_q - (b_r + gamma * b_q_)).abs()
+                abs_td_error = (b_q - (b_r + gamma**b_steps * b_q_)).abs()
 
                 priorities = abs_td_error.detach().cpu().clamp(1e-6).numpy()
 
@@ -341,6 +341,9 @@ def _generate(device, env, qnet, ob_scale,
               number_timesteps, param_noise,
               exploration_fraction, exploration_final_eps,
               atom_num, min_value, max_value):
+    # device = torch.device('cpu')
+    # qnet = deepcopy(qnet)
+    # qnet.to(torch.device('cpu'))
     """ Generate training batch sample """
     noise_scale = 1e-2
     action_dim = env.action_space.n
@@ -406,6 +409,7 @@ def _generate(device, env, qnet, ob_scale,
                 'eprewmean': info['episode']['r'],
             }
         # return data and update observation
+
         yield (o, [a], [r], o_, [int(done)], infos)
         infos = dict()
 

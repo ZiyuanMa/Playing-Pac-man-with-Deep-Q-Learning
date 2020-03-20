@@ -11,7 +11,7 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter
 )
 # parser.add_argument('--algorithm', type=str, help='Algorithm')
-parser.add_argument('--env_name', type=str, required=True, help='environment name')
+parser.add_argument('--env_name', type=str, default='MsPacman-v0', help='environment name')
 parser.add_argument('--checkpoint', type=str, help='Algorithm')
 args = parser.parse_args()
 
@@ -37,31 +37,34 @@ def test(env_name, checkpoint):
 
         network.load_state_dict(torch.load(str(last_checkpoint)+'.checkpoint')[0])
 
+    test = 100
+    sum_reward = 0
+    for i in range(test):
+        obs = env.reset()
+        done = False
+        while not done:
+            if i  == test // 2 - 1:
+                env.render()
+                time.sleep(0.05)
+            obs = trans(obs).unsqueeze(0) / 255
 
-    obs = env.reset()
-    done = False
-    t = 0
-    while not done:
-        env.render()
-        obs = trans(obs).unsqueeze(0)
+            val = network(obs)
+            action = val.argmax(1).item()
 
-        network(obs)
+            obs, reward, done, _ = env.step(action)
+            sum_reward += reward
 
-        obs, reward, done, info = env.step(env.action_space.sample()) # take a random action
-        
-        time.sleep(0.5)
-        if done:
-            print("Episode finished after {} timesteps".format(t+1))
-            break
-    env.close()
+        env.close()
+
+    print(' avg reward: {}' .format(sum_reward/test))
 
 
 
 
 
 if __name__ == '__main__':
+    
     test(args.env_name, args.checkpoint)
-    print(args.checkpoint)
 
 
 
