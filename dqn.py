@@ -14,82 +14,20 @@ import gym
 import numpy as np
 import torch
 import torch.distributions
-import torch.nn as nn
 from torch.nn.functional import softmax, log_softmax
 
 from buffer import ReplayBuffer, PrioritizedReplayBuffer
 import config
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 trans = transforms.Compose([
     transforms.ToPILImage(),
     transforms.Grayscale(),
     transforms.Resize((44, 44)),
     transforms.ToTensor(),
-    # transforms.Normalize(mean = (0.5, 0.5, 0.5), std = (0.5, 0.5, 0.5)),
+    transforms.Lambda(lambda x: x / 255),
+    # transforms.Lambda(lambda x: x.numpy()),
 ])
-
-# def atari(env, **kwargs):
-#     in_dim = env.observation_space.shape
-#     print(in_dim)
-#     policy_dim = env.action_space.n
-#     params = dict(
-#         grad_norm=10,
-#         batch_size=32,
-#         double_q=True,
-#         buffer_size=10000,
-#         exploration_fraction=0.1,
-#         exploration_final_eps=0.01,
-#         train_freq=4,
-#         learning_starts=10000,
-#         target_network_update_freq=1000,
-#         gamma=0.99,
-#         prioritized_replay=True,
-#         prioritized_replay_alpha=0.6,
-#         prioritized_replay_beta0=0.4,
-#         param_noise=False,
-#         dueling=True,
-#         atom_num=51,
-#         min_value=-10,
-#         max_value=10,
-#         ob_scale=1 / 255.0
-#     )
-#     params.update(kwargs)
-#     network = CNN(config.input_shape, policy_dim, params['atom_num'], params.pop('dueling'))
-#     optimizer = Adam(network.parameters(), 1e-4, eps=1e-5)
-#     params.update(network=network, optimizer=optimizer)
-#     return params
-
-
-# def classic_control(env, **kwargs):
-#     in_dim = env.observation_space.shape[0]
-#     policy_dim = env.action_space.n
-#     params = dict(
-#         grad_norm=10,
-#         batch_size=100,
-#         double_q=True,
-#         buffer_size=10000,
-#         exploration_fraction=0.1,
-#         exploration_final_eps=0.01,
-#         train_freq=4,
-#         learning_starts=1000,
-#         target_network_update_freq=200,
-#         gamma=0.99,
-#         prioritized_replay=False,
-#         prioritized_replay_alpha=0.6,
-#         prioritized_replay_beta0=0.4,
-#         param_noise=False,
-#         dueling=True,
-#         atom_num=1,
-#         min_value=-10,
-#         max_value=10,
-#         ob_scale=1
-#     )
-#     params.update(kwargs)
-#     network = MLP(in_dim, policy_dim, params['atom_num'], params.pop('dueling'))
-#     optimizer = Adam(network.parameters(), 1e-3, eps=1e-5)
-#     params.update(network=network, optimizer=optimizer)
-#     return params
-
 
 class CNN(nn.Module):
     def __init__(self, in_shape, out_dim, atom_num, dueling):
@@ -144,48 +82,9 @@ class CNN(nn.Module):
             return logprobs
 
 
-# class MLP(nn.Module):
-#     def __init__(self, in_dim, out_dim, atom_num, dueling):
-#         super().__init__()
-#         self.atom_num = atom_num
-#         self.feature = nn.Sequential(
-#             Flatten(),
-#             nn.Linear(in_dim, 64),
-#             nn.Tanh(),
-#             nn.Linear(64, 64),
-#             nn.Tanh()
-#         )
-
-#         self.q = nn.Linear(64, out_dim * atom_num)
-#         if dueling:
-#             self.state = nn.Linear(64, atom_num)
-
-#         for _, m in self.named_modules():
-#             if isinstance(m, nn.Linear):
-#                 nn.init.xavier_uniform_(m.weight, 1)
-#                 nn.init.constant_(m.bias, 0)
-
-#     def forward(self, x):
-#         batch_size = x.size(0)
-#         latent = self.feature(x)
-#         qvalue = self.q(latent)
-#         if self.atom_num == 1:
-#             if hasattr(self, 'state'):
-#                 svalue = self.state(latent)
-#                 qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
-#             return qvalue
-#         else:
-#             if hasattr(self, 'state'):
-#                 qvalue = qvalue.view(batch_size, -1, self.atom_num)
-#                 svalue = self.state(latent).unsqueeze(1)
-#                 qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
-#             logprobs = log_softmax(qvalue, -1)
-#             return logprobs
-
-
 
 def learn(  env, number_timesteps,
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'), save_path='./', save_interval=config.save_interval,
+            save_path='./', save_interval=config.save_interval,
             ob_scale=config.ob_scale, gamma=config.gamma, grad_norm=config.grad_norm, double_q=config.double_q,
             param_noise=config.param_noise, dueling=config.dueling, exploration_fraction=config.exploration_fraction,
             exploration_final_eps=config.exploration_final_eps, batch_size=config.batch_size, train_freq=config.train_freq,
@@ -262,9 +161,6 @@ def learn(  env, number_timesteps,
         # update qnet
         if n_iter > learning_starts and n_iter % train_freq == 0:
             b_o, b_a, b_r, b_o_, b_d, b_steps, *extra = buffer.sample(batch_size)
-
-            b_o.mul_(ob_scale)
-            b_o_.mul_(ob_scale)
 
             if atom_num == 1:
                 with torch.no_grad():
@@ -352,8 +248,7 @@ def _generate(device, env, qnet, ob_scale,
         vrange = torch.linspace(min_value, max_value, atom_num).to(device)
 
     o = env.reset()
-    o = trans(o).numpy()
-
+    o = trans(o)
 
     infos = dict()
     for n in range(1, number_timesteps + 1):
@@ -362,7 +257,8 @@ def _generate(device, env, qnet, ob_scale,
 
         # sample action
         with torch.no_grad():
-            ob = scale_ob(np.expand_dims(o, 0), device, ob_scale)
+
+            ob = o.unsqueeze(0).to(device)
 
             q = qnet(ob)
 
@@ -401,7 +297,7 @@ def _generate(device, env, qnet, ob_scale,
 
         # take action in env
         o_, r, done, info = env.step(a)
-        o_ = trans(o_).numpy()
+        o_ = trans(o_)
 
         if info.get('episode'):
             infos = {
@@ -418,16 +314,12 @@ def _generate(device, env, qnet, ob_scale,
             o = o_ 
         else:
             o = env.reset()
-            o = trans(o).numpy()
+            o = trans(o)
 
 
 def huber_loss(abs_td_error):
     flag = (abs_td_error < 1).float()
     return flag * abs_td_error.pow(2) * 0.5 + (1 - flag) * (abs_td_error - 0.5)
-
-
-def scale_ob(array, device, scale):
-    return torch.from_numpy(array.astype(np.float32) * scale).to(device)
 
 
 class Flatten(nn.Module):

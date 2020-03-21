@@ -16,7 +16,7 @@ parser.add_argument('--checkpoint', type=str, help='Algorithm')
 args = parser.parse_args()
 
 trans = transforms.Compose([
-    transforms.ToPILImage(),
+    # transforms.ToPILImage(),
     transforms.Grayscale(),
     transforms.Resize((44, 44)),
     transforms.ToTensor(),
