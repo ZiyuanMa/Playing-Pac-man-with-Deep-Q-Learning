@@ -20,7 +20,7 @@ from gym import spaces
 import torch
 import torch.distributions
 
-trans = transforms.Compose([
+transform = transforms.Compose([
     transforms.ToPILImage(),
     transforms.Grayscale(),
     transforms.Resize((44, 44)),
@@ -80,7 +80,7 @@ class DiagGaussian(object):
 def atari(env, **kwargs):
     in_dim = env.observation_space.shape
     policy_dim = env.action_space.n
-    network = CNN(in_dim, policy_dim)
+    network = Network(in_dim, policy_dim)
     optimizer = Adam(network.parameters(), 2.5e-4, eps=1e-5)
     params = dict(
         dist=Categorical,
@@ -102,7 +102,7 @@ def atari(env, **kwargs):
 
 
 
-class CNN(nn.Module):
+class Network(nn.Module):
     def __init__(self, in_shape, policy_dim):
         super().__init__()
         c, h, w = in_shape

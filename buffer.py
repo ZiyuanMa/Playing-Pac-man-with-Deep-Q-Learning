@@ -177,7 +177,7 @@ class ReplayBuffer(object):
     def __len__(self):
         return len(self._storage)
 
-    def add(self, *args):
+    def add(self, args):
         if self._next_idx >= len(self._storage):
             self._storage.append(args)
         else:
@@ -185,40 +185,37 @@ class ReplayBuffer(object):
         self._next_idx = (self._next_idx + 1) % self._maxsize
 
     def _encode_sample(self, idxes):
-        batch_obs, batch_action, batch_reward, batch_obs_, batch_done, b_steps = [], [], [], [], [], []
-        b_extras = [[] for _ in range(len(self._storage[0]) - 5)]
+        batch_obs, batch_action, batch_reward, batch_obs_, batch_done, batch_steps = [], [], [], [], [], []
+        
         for i in idxes:
-            o, a, r, post_obs, done, *extras = self._storage[i]
+            obs, action, reward, obs_, done = self._storage[i]
 
             # n steps forward
-            forward = 1
-            for j in range(1,config.forward_steps):
+            steps = 1
+            sum_reward = reward
+            for j in range(1,config.n_steps):
                 next_idx = (i+j) % self._maxsize
                 if next_idx != self._next_idx and not done:
-                    _, _, next_reward, post_obs, done, *extras = self._storage[next_idx]
-                    r += next_reward * config.gamma ** j
-                    forward += 1
+                    _, _, reward, obs_, done = self._storage[next_idx]
+                    sum_reward += reward * config.gamma ** j
+                    steps += 1
                 else:
                     break
 
-            batch_obs.append(o.float())
-            batch_action.append(a)
-            batch_reward.append(r)
-            batch_obs_.append(post_obs.float())
+            batch_obs.append(obs.float())
+            batch_action.append(action)
+            batch_reward.append(sum_reward)
+            batch_obs_.append(obs_.float())
             batch_done.append(done)
-            b_steps.append([forward])
-            for j, extra in enumerate(extras):
-                b_extras[j].append(extra)
+            batch_steps.append(steps)
+
         res = (
-            torch.stack(batch_obs).to(self._device),
-            torch.LongTensor(batch_action).to(self._device),
-            torch.FloatTensor(batch_reward).to(self._device),
-            torch.stack(batch_obs_).to(self._device),
-            torch.FloatTensor(batch_done).to(self._device),
-            torch.FloatTensor(b_steps).to(self._device),
-        ) + tuple(
-            torch.from_numpy(np.asarray(b_extra)).to(self._device).float()
-            for b_extra in b_extras
+            torch.stack(batch_obs),
+            torch.LongTensor(batch_action).unsqueeze(1).to(self._device),
+            torch.FloatTensor(batch_reward).unsqueeze(1).to(self._device),
+            torch.stack(batch_obs_),
+            torch.FloatTensor(batch_done).unsqueeze(1).to(self._device),
+            torch.FloatTensor(batch_steps).unsqueeze(1).to(self._device),
         )
         return res
 
