@@ -45,8 +45,8 @@ class Categorical(object):
     def entropy(self):
         return self._dist.entropy()
 
-    def log_prob(self, b_a):
-        return self._dist.log_prob(b_a.long())
+    def log_prob(self, batch_action):
+        return self._dist.log_prob(batch_action.long())
 
     def sample(self):
         return self._dist.sample()
@@ -66,8 +66,8 @@ class DiagGaussian(object):
     def entropy(self):
         return self._dist.entropy().sum(-1)
 
-    def log_prob(self, b_a):
-        return self._dist.log_prob(b_a.float()).sum(-1)
+    def log_prob(self, batch_action):
+        return self._dist.log_prob(batch_action.float()).sum(-1)
 
     def sample(self):
         return self._dist.sample()
@@ -188,22 +188,22 @@ def learn(env, nenv,
         loader = DataLoader(list(zip(*data)), batch_size, True)
         records = {'pg': [], 'v': [], 'ent': [], 'kl': [], 'clipfrac': []}
         for _ in range(opt_iter):
-            for b_o, b_a, b_r, b_logp_old, b_v_old in loader:
+            for batch_obs, batch_action, batch_reward, b_logp_old, b_v_old in loader:
                 # calculate advantange
-                b_logits, b_v = policy(b_o)
+                b_logits, b_v = policy(batch_obs)
                 b_v = b_v[:, 0]
                 pd = dist(b_logits)
                 entropy = pd.entropy().mean()
-                b_logp = pd.log_prob(b_a)
+                b_logp = pd.log_prob(batch_action)
                 # highlight: normalized advantage will gives better performance
-                adv = b_r - b_v_old
+                adv = batch_reward - b_v_old
                 adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
                 # update policy
                 c_b_v = b_v_old + (b_v - b_v_old).clamp(-cliprange, cliprange)
                 vloss = 0.5 * torch.mean(torch.max(
-                    (b_v - b_r).pow(2),
-                    (c_b_v - b_r).pow(2)
+                    (b_v - batch_reward).pow(2),
+                    (c_b_v - batch_reward).pow(2)
                 ))  # highlight: Clip is also applied to value loss
                 ratio = (b_logp - b_logp_old).exp()
                 pgloss = torch.mean(torch.max(
