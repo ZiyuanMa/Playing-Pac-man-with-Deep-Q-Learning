@@ -202,18 +202,18 @@ class ReplayBuffer(object):
                 else:
                     break
 
-            batch_obs.append(obs.float())
+            batch_obs.append(obs)
             batch_action.append(action)
             batch_reward.append(sum_reward)
-            batch_obs_.append(obs_.float())
+            batch_obs_.append(obs_)
             batch_done.append(done)
             batch_steps.append(steps)
 
         res = (
-            torch.stack(batch_obs),
+            torch.FloatTensor(np.stack(batch_obs)).to(self._device),
             torch.LongTensor(batch_action).unsqueeze(1).to(self._device),
             torch.FloatTensor(batch_reward).unsqueeze(1).to(self._device),
-            torch.stack(batch_obs_),
+            torch.FloatTensor(np.stack(batch_obs_)).to(self._device),
             torch.FloatTensor(batch_done).unsqueeze(1).to(self._device),
             torch.FloatTensor(batch_steps).unsqueeze(1).to(self._device),
         )

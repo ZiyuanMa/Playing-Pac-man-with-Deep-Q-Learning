@@ -21,12 +21,13 @@ import config
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 transform = transforms.Compose([
+    transforms.Lambda(lambda x: x[:195,:,:]),
     transforms.ToPILImage(),
     transforms.Grayscale(),
-    transforms.Resize((44, 44)),
+    transforms.Resize((84, 84)),
     transforms.ToTensor(),
     transforms.Lambda(lambda x: x / 255),
-    transforms.Lambda(lambda x: x.to(device)),
+    transforms.Lambda(lambda x: x.numpy()),
 ])
 
 class Network(nn.Module):
@@ -36,7 +37,7 @@ class Network(nn.Module):
         cnn_out_dim = 64 * ((h - 28) // 8) * ((w - 28) // 8)
         self.atom_num = atom_num
 
-        # 44 x 44 input
+        # 84 x 84 input
         self.feature = nn.Sequential(
             nn.Conv2d(c, 32, 8, 4),
             nn.ReLU(True),
@@ -84,7 +85,7 @@ class Network(nn.Module):
 
 
 def learn(  env, number_timesteps,
-            save_path='./models', save_interval=config.save_interval,
+            save_path='./models/MsPacman/', save_interval=config.save_interval,
             gamma=config.gamma, grad_norm=config.grad_norm, double_q=config.double_q,
             param_noise=config.param_noise, dueling=config.dueling, exploration_fraction=config.exploration_fraction,
             exploration_final_eps=config.exploration_final_eps, batch_size=config.batch_size, train_freq=config.train_freq,
@@ -180,8 +181,7 @@ def learn(  env, number_timesteps,
                 with torch.no_grad():
                     batch_doneist_ = tar_qnet(batch_obs_).exp()
                     batch_action_ = (batch_doneist_ * z_i).sum(-1).argmax(1)
-                    b_tzj = (gamma * (1 - batch_done) * z_i[None, :]
-                             + batch_reward).clamp(min_value, max_value)
+                    b_tzj = (gamma * (1 - batch_done) * z_i[None, :] + batch_reward).clamp(min_value, max_value)
                     b_i = (b_tzj - min_value) / delta_z
                     b_l = b_i.floor()
                     b_u = b_i.ceil()
@@ -235,6 +235,8 @@ def _generate(device, env, qnet,
 
     o = env.reset()
     o = transform(o)
+    o = np.concatenate([np.copy(o) for _ in range(4)], axis=0)
+    
 
     for n in range(1, number_timesteps + 1):
         epsilon = 1.0 - (1.0 - exploration_final_eps) * n / explore_steps
@@ -243,7 +245,7 @@ def _generate(device, env, qnet,
         # sample action
         with torch.no_grad():
 
-            ob = o.unsqueeze(0)
+            ob = torch.from_numpy(o).unsqueeze(0).to(device)
 
             q = qnet(ob)
 
@@ -260,6 +262,8 @@ def _generate(device, env, qnet,
         o_, reward, done, _ = env.step(action)
         o_ = transform(o_)
 
+        temp = np.delete(o, 0, 0)
+        o_ = np.concatenate((temp, o_), axis=0)
         # return data and update observation
 
         yield (o, action, reward, o_, int(done))
@@ -270,6 +274,7 @@ def _generate(device, env, qnet,
         else:
             o = env.reset()
             o = transform(o)
+            o = np.concatenate([np.copy(o) for _ in range(4)], axis=0)
 
 
 def huber_loss(abs_td_error):

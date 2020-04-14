@@ -357,3 +357,7 @@ class Trajectories(object):
 
 def scale_ob(array, device, scale):
     return torch.from_numpy(array.astype(np.float32) * scale).to(device)
+
+if __name__ == '__main__':
+    env = gym.make('MsPacman-v0')
+    learn(env, 10000000)
