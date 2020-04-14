@@ -87,7 +87,7 @@ class Network(nn.Module):
 def learn(  env, number_timesteps,
             save_path='./models/MsPacman/', save_interval=config.save_interval,
             gamma=config.gamma, grad_norm=config.grad_norm, double_q=config.double_q,
-            param_noise=config.param_noise, dueling=config.dueling, exploration_fraction=config.exploration_fraction,
+            dueling=config.dueling, exploration_fraction=config.exploration_fraction,
             exploration_final_eps=config.exploration_final_eps, batch_size=config.batch_size, train_freq=config.train_freq,
             learning_starts=config.learning_starts, target_network_update_freq=config.target_network_update_freq, buffer_size=config.buffer_size,
             prioritized_replay=config.prioritized_replay, prioritized_replay_alpha=config.prioritized_replay_alpha,

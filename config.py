@@ -17,7 +17,6 @@ gamma=0.99
 prioritized_replay=False
 prioritized_replay_alpha=0.6
 prioritized_replay_beta0=0.4
-param_noise=False
 dueling=False
 atom_num=1
 min_value=-10
