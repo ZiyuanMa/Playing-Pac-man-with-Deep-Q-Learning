@@ -117,7 +117,7 @@ def learn(  env, number_timesteps,
     """
     # create network and optimizer
     network = Network(config.input_shape, env.action_space.n, atom_num, dueling)
-    optimizer = Adam(network.parameters(), 1e-4, eps=1e-5)
+    optimizer = Adam(network.parameters(), 6.25e-5, eps=1.5e-4)
 
     # create target network
     qnet = network.to(device)
@@ -246,7 +246,7 @@ def learn(  env, number_timesteps,
                 print('vloss: {:.6f}'.format(loss.item()))
 
         if save_interval and n_iter % save_interval == 0:
-            torch.save(qnet.state_dict(), os.path.join(save_path, '{}checkpoint.pth'.format(n_iter)))
+            torch.save(qnet.state_dict(), os.path.join(save_path, '{}checkpoint+.pth'.format(n_iter)))
 
 
 def _generate(device, env, qnet,
@@ -293,6 +293,11 @@ def _generate(device, env, qnet,
         o_ = np.concatenate((temp, o_), axis=0)
         # return data and update observation
 
+        if reward > 1:
+            reward = 1
+        elif reward < -1:
+            reward = -1
+
         yield (o, action, reward, o_, int(done))
 
         if not done:
@@ -319,4 +324,4 @@ class Flatten(nn.Module):
 
 if __name__ == '__main__':
     env = gym.make('MsPacman-v0')
-    learn(env, 10000000)
+    learn(env, 5000000)

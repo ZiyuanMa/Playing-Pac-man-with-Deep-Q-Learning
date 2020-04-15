@@ -189,7 +189,8 @@ class ReplayBuffer(object):
         
         for i in idxes:
             obs, action, reward, obs_, done = self._storage[i]
-
+            if reward < 0:
+                print(reward)
             # n steps forward
             steps = 1
             sum_reward = reward
