@@ -13,8 +13,6 @@ import gym
 
 import numpy as np
 import torch
-import torch.distributions
-from torch.nn.functional import softmax, log_softmax
 
 from buffer import ReplayBuffer, PrioritizedReplayBuffer
 import config
@@ -140,7 +138,8 @@ def learn(  env, number_timesteps,
 
     if atom_num > 1:
         delta_z = float(max_value - min_value) / (atom_num - 1)
-        z_i = torch.linspace(min_value, max_value, atom_num).to(device)
+        support = torch.linspace(min_value, max_value, atom_num).to(device)
+        batch_support = support.unsqueeze(0).expand(config.batch_size, config.atom_num)
 
     start_ts = time.time()
     for n_iter in range(1, number_timesteps + 1):
@@ -179,18 +178,46 @@ def learn(  env, number_timesteps,
 
             else:
                 with torch.no_grad():
-                    batch_doneist_ = tar_qnet(batch_obs_).exp()
-                    batch_action_ = (batch_doneist_ * z_i).sum(-1).argmax(1)
-                    b_tzj = (gamma * (1 - batch_done) * z_i[None, :] + batch_reward).clamp(min_value, max_value)
-                    b_i = (b_tzj - min_value) / delta_z
+
+                    batch_dist_ = tar_qnet(batch_obs_).exp()
+                    if double_q:
+                        batch_action_ = (qnet(batch_obs_).exp() * support).sum(-1).argmax(1)
+                    else:
+                        batch_action_ = (batch_dist_ * support).sum(-1).argmax(1)
+
+                    b_Tz = (gamma**batch_steps * (1 - batch_done) * batch_support + batch_reward).clamp(min_value, max_value)
+                    b_i = (b_Tz - min_value) / delta_z
                     b_l = b_i.floor()
                     b_u = b_i.ceil()
                     b_m = torch.zeros(batch_size, atom_num).to(device)
-                    temp = batch_doneist_[torch.arange(batch_size), batch_action_, :]
+                    temp = batch_dist_[torch.arange(batch_size), batch_action_, :]
                     b_m.scatter_add_(1, b_l.long(), temp * (b_u - b_i))
                     b_m.scatter_add_(1, b_u.long(), temp * (b_i - b_l))
-                batch_q = qnet(batch_obs)[torch.arange(batch_size), batch_action.squeeze(1), :]
-                kl_error = -(batch_q * b_m).sum(1)
+    # delta_z = float(Vmax - Vmin) / (num_atoms - 1)
+    # support = torch.linspace(Vmin, Vmax, num_atoms)
+    
+    # next_dist   = target_model(next_state).data.cpu() * support
+    # next_action = next_dist.sum(2).max(1)[1]
+    # next_action = next_action.unsqueeze(1).unsqueeze(1).expand(next_dist.size(0), 1, next_dist.size(2))
+    # next_dist   = next_dist.gather(1, next_action).squeeze(1)
+        
+    # rewards = rewards.unsqueeze(1).expand_as(next_dist)
+    # dones   = dones.unsqueeze(1).expand_as(next_dist)
+    # support = support.unsqueeze(0).expand_as(next_dist)
+    
+    # Tz = rewards + (1 - dones) * 0.99 * support
+    # Tz = Tz.clamp(min=Vmin, max=Vmax)
+    # b  = (Tz - Vmin) / delta_z
+    # l  = b.floor().long()
+    # u  = b.ceil().long()
+        
+    # offset = torch.linspace(0, (batch_size - 1) * num_atoms, batch_size).long().unsqueeze(1).expand(batch_size, num_atoms)
+
+    # proj_dist = torch.zeros(next_dist.size())    
+    # proj_dist.view(-1).index_add_(0, (l + offset).view(-1), (next_dist * (u.float() - b)).view(-1))
+    # proj_dist.view(-1).index_add_(0, (u + offset).view(-1), (next_dist * (b - l.float())).view(-1))
+                batch_log_dist = qnet(batch_obs)[torch.arange(batch_size), batch_action.squeeze(1), :]
+                kl_error = -(batch_log_dist * b_m).sum(1)
                 # use kl error as priorities as proposed by Rainbow
                 priorities = kl_error.detach().cpu().clamp(1e-6).numpy()
                 loss = kl_error.mean()
