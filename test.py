@@ -39,7 +39,7 @@ def test(env_name):
     env = gym.make(env_name)
     network = Network(config.input_shape, env.action_space.n, config.atom_num, config.dueling)
     network.to(device)
-    checkpoint = config.save_interval * 180
+    checkpoint = config.save_interval * 80
     show = True
     if config.atom_num > 1:
         vrange = torch.linspace(config.min_value, config.max_value, config.atom_num).to(device)
@@ -49,7 +49,7 @@ def test(env_name):
         # torch.save(network.state_dict(), './models/rainbow{}.pth'.format(checkpoint))
 
         sum_reward = 0
-        round = 5
+        round = 3
         for _ in range(round):
             o = env.reset()
             o = transform(o)
@@ -65,7 +65,7 @@ def test(env_name):
                 if config.atom_num > 1:
                     q = (q.exp() * vrange).sum(2)
 
-                if random.random() < 0.001:
+                if random.random() < 0.05:
                     action = env.action_space.sample()
                 else:
                     action = q.argmax(1).item()
