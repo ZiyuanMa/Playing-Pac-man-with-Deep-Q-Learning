@@ -26,18 +26,18 @@ transform = transforms.Compose([
 
 def test(env_name):
     env = gym.make(env_name)
+    round = 3
+    show = False
+    x = [5*i for i in range(1, 101)]
 
     network = Network(config.input_shape, env.action_space.n, 1, False)
     network.to(device)
     checkpoint = config.save_interval
-    show = False
 
-    x = [ 5*i for i in range(1, 101)]
     y1 = []
     while os.path.exists('./models/MsPacman/'+str(checkpoint)+'checkpoint+.pth'):
         network.load_state_dict(torch.load('./models/MsPacman/'+str(checkpoint)+'checkpoint+.pth'))
         sum_reward = 0
-        round = 3
         for _ in range(round):
             o = env.reset()
             o = transform(o)
@@ -75,12 +75,11 @@ def test(env_name):
     checkpoint = config.save_interval
     show = False
 
-    vrange = torch.linspace(config.min_value, config.max_value, config.atom_num).to(device)
+    vrange = torch.linspace(config.min_value, config.max_value, 51).to(device)
     y2 = []
-    while os.path.exists('./models/MsPacman/'+str(checkpoint)+'checkpoint+.pth'):
-        network.load_state_dict(torch.load('./models/MsPacman/'+str(checkpoint)+'checkpoint+.pth'))
+    while os.path.exists('./models/MsPacman/'+str(checkpoint)+'checkpoint++.pth'):
+        network.load_state_dict(torch.load('./models/MsPacman/'+str(checkpoint)+'checkpoint++.pth'))
         sum_reward = 0
-        round = 3
         for _ in range(round):
             o = env.reset()
             o = transform(o)
@@ -115,16 +114,16 @@ def test(env_name):
         y2.append(sum_reward/round)
         checkpoint += config.save_interval
 
-    # plt.figure(figsize=(10,5))#设置画布的尺寸
-    plt.title('MsPacman')#标题，并设定字号大小
-    plt.xlabel('number of frames (1e4)')#设置x轴，并设定字号大小
-    plt.ylabel('average reward')#设置y轴，并设定字号大小
+
+    plt.title('MsPacman')
+    plt.xlabel('number of frames (1e4)')
+    plt.ylabel('average reward')
     
-    #color：颜色，linewidth：线宽，linestyle：线条类型，label：图例，marker：数据点的类型
+
     plt.plot(x, y1, label='DQN')
     plt.plot(x, y2, label='Fusion DQN')
     
-    plt.show()#显示图像
+    plt.show()
 
 
 if __name__ == '__main__':
