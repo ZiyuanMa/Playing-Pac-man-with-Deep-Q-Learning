@@ -246,7 +246,7 @@ def learn(  env, number_timesteps,
                 print('vloss: {:.6f}'.format(loss.item()))
 
         if save_interval and n_iter % save_interval == 0:
-            torch.save(qnet.state_dict(), os.path.join(save_path, '{}checkpoint+.pth'.format(n_iter)))
+            torch.save(qnet.state_dict(), os.path.join(save_path, '{}checkpoint++.pth'.format(n_iter)))
 
 
 def _generate(device, env, qnet,
