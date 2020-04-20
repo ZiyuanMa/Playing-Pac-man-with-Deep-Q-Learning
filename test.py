@@ -9,7 +9,7 @@ import random
 from torchvision import transforms
 import matplotlib.pyplot as plt
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+device = torch.device('cpu')
 
 transform = transforms.Compose([
     transforms.Lambda(lambda x: x[:195,:,:]),
@@ -26,17 +26,17 @@ transform = transforms.Compose([
 
 def test(env_name):
     env = gym.make(env_name)
-    round = 3
-    show = False
-    x = [5*i for i in range(1, 101)]
+    round = 5
+    show = True
+    x = [5*i for i in range(1, 201)]
 
     network = Network(config.input_shape, env.action_space.n, 1, False)
     network.to(device)
-    checkpoint = config.save_interval
+    checkpoint = config.save_interval * 150
 
     y1 = []
-    while os.path.exists('./models/MsPacman/'+str(checkpoint)+'checkpoint+.pth'):
-        network.load_state_dict(torch.load('./models/MsPacman/'+str(checkpoint)+'checkpoint+.pth'))
+    while os.path.exists('./models/Breakout/'+str(checkpoint)+'checkpoint+.pth'):
+        network.load_state_dict(torch.load('./models/Breakout/'+str(checkpoint)+'checkpoint+.pth'))
         sum_reward = 0
         for _ in range(round):
             o = env.reset()
@@ -51,7 +51,7 @@ def test(env_name):
 
                 q = network(obs)
 
-                if random.random() < 0.05:
+                if random.random() < 0.025:
                     action = env.action_space.sample()
                 else:
                     action = q.argmax(1).item()
@@ -77,8 +77,8 @@ def test(env_name):
 
     vrange = torch.linspace(config.min_value, config.max_value, 51).to(device)
     y2 = []
-    while os.path.exists('./models/MsPacman/'+str(checkpoint)+'checkpoint++.pth'):
-        network.load_state_dict(torch.load('./models/MsPacman/'+str(checkpoint)+'checkpoint++.pth'))
+    while os.path.exists('./models/Breakout/'+str(checkpoint)+'checkpoint++.pth'):
+        network.load_state_dict(torch.load('./models/Breakout/'+str(checkpoint)+'checkpoint++.pth'))
         sum_reward = 0
         for _ in range(round):
             o = env.reset()
@@ -95,7 +95,7 @@ def test(env_name):
 
                 q = (q.exp() * vrange).sum(2)
 
-                if random.random() < 0.05:
+                if random.random() < 0.025:
                     action = env.action_space.sample()
                 else:
                     action = q.argmax(1).item()
@@ -115,7 +115,7 @@ def test(env_name):
         checkpoint += config.save_interval
 
 
-    plt.title('MsPacman')
+    plt.title('Breakout')
     plt.xlabel('number of frames (1e4)')
     plt.ylabel('average reward')
     
@@ -123,18 +123,16 @@ def test(env_name):
     plt.plot(x, y1, label='DQN')
     plt.plot(x, y2, label='Fusion DQN')
     
+    plt.legend()
     plt.show()
 
 
 if __name__ == '__main__':
     
-    # test('MsPacman-v0')
+    test('Breakout-v0')
 
-    env = gym.make('MsPacman-v0')
-    obs = env.reset()
-    plt.imsave('MsPacman.png', obs)
     # env = gym.make('MsPacman-v0')
     # obs = env.reset()
-    # plt.imshow(obs)
-    # img.show()
+    # plt.imsave('MsPacman.png', obs)
+
 
