@@ -1,7 +1,7 @@
 
 # training setting
-env_name = 'BreakoutDeterministic-v4'
-training_steps = 2500000
+env_name = 'MsPacman-v0'
+training_steps = 10000000
 
 
 # deep q-learning

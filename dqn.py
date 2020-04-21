@@ -18,7 +18,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def learn(  env_name=config.env_name, number_timesteps=config.training_steps,
-            save_path='./models/Breakout/', save_interval=config.save_interval,
+            save_path='./models/MsPacman', save_interval=config.save_interval,
             gamma=config.gamma, grad_norm=config.grad_norm, double_q=config.double_q,
             dueling=config.dueling, exploration_fraction=config.exploration_fraction,
             exploration_final_eps=config.exploration_final_eps, batch_size=config.batch_size, train_freq=config.train_freq,

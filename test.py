@@ -14,7 +14,7 @@ device = torch.device('cpu')
 def test(env_name=config.env_name):
     env = gym.make(env_name)
     round = 5
-    show = True
+    show = False
     x = [5*i for i in range(1, 201)]
 
     network = Network(env.action_space.n, dueling=False, atom_num=1)
@@ -22,8 +22,8 @@ def test(env_name=config.env_name):
     checkpoint = config.save_interval
 
     y1 = []
-    while os.path.exists('./models/Breakout/'+str(checkpoint)+'checkpoint+.pth'):
-        network.load_state_dict(torch.load('./models/Breakout/'+str(checkpoint)+'checkpoint+.pth'))
+    while os.path.exists('./models/MsPacman/'+str(checkpoint)+'checkpoint+.pth'):
+        network.load_state_dict(torch.load('./models/MsPacman/'+str(checkpoint)+'checkpoint+.pth'))
         sum_reward = 0
         for _ in range(round):
             o = env.reset()
@@ -57,15 +57,15 @@ def test(env_name=config.env_name):
         y1.append(sum_reward/round)
         checkpoint += config.save_interval
 
-    network = Network(env.action_space.n, 51, True)
+    network = Network(env.action_space.n, dueling=True, atom_num=51)
     network.to(device)
-    checkpoint = config.save_interval
+    checkpoint = config.save_interval * 180
     show = False
 
     vrange = torch.linspace(config.min_value, config.max_value, 51).to(device)
     y2 = []
-    while os.path.exists('./models/Breakout/'+str(checkpoint)+'checkpoint++.pth'):
-        network.load_state_dict(torch.load('./models/Breakout/'+str(checkpoint)+'checkpoint++.pth'))
+    while os.path.exists('./models/MsPacman/'+str(checkpoint)+'checkpoint++.pth'):
+        network.load_state_dict(torch.load('./models/MsPacman/'+str(checkpoint)+'checkpoint++.pth'))
         sum_reward = 0
         for _ in range(round):
             o = env.reset()
@@ -101,7 +101,8 @@ def test(env_name=config.env_name):
         y2.append(sum_reward/round)
         checkpoint += config.save_interval
 
-
+    print(sum(y1)/len(y1))
+    print(sum(y2)/len(y2))
     plt.title(config.env_name)
     plt.xlabel('number of frames (1e4)')
     plt.ylabel('average reward')
@@ -115,7 +116,7 @@ def test(env_name=config.env_name):
 
 if __name__ == '__main__':
     
-    test('Breakout-v0')
+    test('MsPacman-v0')
 
     # env = gym.make('MsPacman-v0')
     # obs = env.reset()
