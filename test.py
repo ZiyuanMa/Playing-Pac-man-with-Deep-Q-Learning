@@ -1,38 +1,25 @@
 import config
-from dqn import Network
+from model import Network, transform
 import gym
 import torch
 import os
 import time
 import numpy as np
 import random
-from torchvision import transforms
 import matplotlib.pyplot as plt
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 device = torch.device('cpu')
 
-transform = transforms.Compose([
-    transforms.Lambda(lambda x: x[:195,:,:]),
-    transforms.ToPILImage(),
-    transforms.Grayscale(),
-    transforms.Resize((84, 84)),
-    transforms.ToTensor(),
-    transforms.Lambda(lambda x: x / 255),
-    transforms.Lambda(lambda x: x.numpy()),
-])
 
 
-
-
-def test(env_name):
+def test(env_name=config.env_name):
     env = gym.make(env_name)
     round = 5
     show = True
     x = [5*i for i in range(1, 201)]
 
-    network = Network(config.input_shape, env.action_space.n, 1, False)
+    network = Network(env.action_space.n, dueling=False, atom_num=1)
     network.to(device)
-    checkpoint = config.save_interval * 150
+    checkpoint = config.save_interval
 
     y1 = []
     while os.path.exists('./models/Breakout/'+str(checkpoint)+'checkpoint+.pth'):
@@ -51,7 +38,7 @@ def test(env_name):
 
                 q = network(obs)
 
-                if random.random() < 0.025:
+                if random.random() < config.test_epsilon:
                     action = env.action_space.sample()
                 else:
                     action = q.argmax(1).item()
@@ -70,7 +57,7 @@ def test(env_name):
         y1.append(sum_reward/round)
         checkpoint += config.save_interval
 
-    network = Network(config.input_shape, env.action_space.n, 51, True)
+    network = Network(env.action_space.n, 51, True)
     network.to(device)
     checkpoint = config.save_interval
     show = False
@@ -95,7 +82,7 @@ def test(env_name):
 
                 q = (q.exp() * vrange).sum(2)
 
-                if random.random() < 0.025:
+                if random.random() < config.test_epsilon:
                     action = env.action_space.sample()
                 else:
                     action = q.argmax(1).item()
@@ -115,10 +102,9 @@ def test(env_name):
         checkpoint += config.save_interval
 
 
-    plt.title('Breakout')
+    plt.title(config.env_name)
     plt.xlabel('number of frames (1e4)')
     plt.ylabel('average reward')
-    
 
     plt.plot(x, y1, label='DQN')
     plt.plot(x, y2, label='Fusion DQN')

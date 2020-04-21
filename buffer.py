@@ -1,9 +1,3 @@
-"""
-This file is adapted from following files in openai/baselines.
-common/segment_tree.py
-deepq/replay_buffer.py
-baselines/acer/buffer.py
-"""
 import operator
 import random
 
@@ -15,31 +9,7 @@ import config
 
 class SegmentTree(object):
     def __init__(self, capacity, operation, neutral_element):
-        """Build a Segment Tree data structure.
 
-        https://en.wikipedia.org/wiki/Segment_tree
-
-        Can be used as regular array, but with two
-        important differences:
-
-            a) setting item's value is slightly slower.
-               It is O(lg capacity) instead of O(1).
-            b) user has access to an efficient ( O(log segment size) )
-               `reduce` operation which reduces `operation` over
-               a contiguous subsequence of items in the array.
-
-        Paramters
-        ---------
-        capacity: int
-            Total size of the array - must be a power of two.
-        operation: lambda obj, obj -> obj
-            and operation for combining elements (eg. sum, max)
-            must form a mathematical group together with the set of
-            possible values for array elements (i.e. be associative)
-        neutral_element: obj
-            neutral element for the operation above. eg. float('-inf')
-            for max and 0 for sum.
-        """
         assert capacity > 0 and capacity & (capacity - 1) == 0, \
             "capacity must be positive and a power of 2."
         self._capacity = capacity
@@ -65,21 +35,7 @@ class SegmentTree(object):
                 )
 
     def reduce(self, start=0, end=None):
-        """Returns result of applying `self.operation`
-        to a contiguous subsequence of the array.
 
-        Parameters
-        ----------
-        start: int
-            beginning of the subsequence
-        end: int
-            end of the subsequences
-
-        Returns
-        -------
-        reduced: obj
-            result of reducing self.operation over the specified range of array.
-        """
         if end is None:
             end = self._capacity
         if end < 0:
@@ -189,8 +145,7 @@ class ReplayBuffer(object):
         
         for i in idxes:
             obs, action, reward, obs_, done = self._storage[i]
-            if reward < 0:
-                print(reward)
+
             # n steps forward
             steps = 1
             sum_reward = reward

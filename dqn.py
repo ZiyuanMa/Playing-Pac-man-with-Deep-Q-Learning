@@ -1,5 +1,3 @@
-import torch.nn as nn
-from torch.nn.functional import log_softmax
 from torch.optim import Adam
 import math
 import os
@@ -7,7 +5,7 @@ import random
 import time
 from collections import deque
 from copy import deepcopy
-from torchvision import transforms
+from model import Network, transform
 
 import gym
 
@@ -18,71 +16,8 @@ from buffer import ReplayBuffer, PrioritizedReplayBuffer
 import config
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-transform = transforms.Compose([
-    transforms.Lambda(lambda x: x[:195,:,:]),
-    transforms.ToPILImage(),
-    transforms.Grayscale(),
-    transforms.Resize((84, 84)),
-    transforms.ToTensor(),
-    transforms.Lambda(lambda x: x / 255),
-    transforms.Lambda(lambda x: x.numpy()),
-])
 
-class Network(nn.Module):
-    def __init__(self, in_shape, out_dim, atom_num, dueling):
-        super().__init__()
-        c, h, w = in_shape
-        cnn_out_dim = 64 * ((h - 28) // 8) * ((w - 28) // 8)
-        self.atom_num = atom_num
-
-        # 84 x 84 input
-        self.feature = nn.Sequential(
-            nn.Conv2d(c, 32, 8, 4),
-            nn.ReLU(True),
-            nn.Conv2d(32, 64, 4, 2),
-            nn.ReLU(True),
-            nn.Conv2d(64, 64, 3, 1),
-            nn.ReLU(True),
-            Flatten(),
-        )
-
-        self.q = nn.Sequential(
-            nn.Linear(cnn_out_dim, 256),
-            nn.ReLU(True),
-            nn.Linear(256, out_dim * atom_num)
-        )
-        if dueling:
-            self.state = nn.Sequential(
-                nn.Linear(cnn_out_dim, 256),
-                nn.ReLU(True),
-                nn.Linear(256, atom_num)
-            )
-
-        for _, m in self.named_modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-
-    def forward(self, x):
-        batch_size = x.size(0)
-        latent = self.feature(x)
-        qvalue = self.q(latent)
-        if self.atom_num == 1:
-            if hasattr(self, 'state'):
-                svalue = self.state(latent)
-                qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
-            return qvalue
-        else:
-            qvalue = qvalue.view(batch_size, -1, self.atom_num)
-            if hasattr(self, 'state'):
-                svalue = self.state(latent).unsqueeze(1)
-                qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
-            logprobs = log_softmax(qvalue, -1)
-            return logprobs
-
-
-
-def learn(  env, number_timesteps,
+def learn(  env_name=config.env_name, number_timesteps=config.training_steps,
             save_path='./models/Breakout/', save_interval=config.save_interval,
             gamma=config.gamma, grad_norm=config.grad_norm, double_q=config.double_q,
             dueling=config.dueling, exploration_fraction=config.exploration_fraction,
@@ -90,33 +25,12 @@ def learn(  env, number_timesteps,
             learning_starts=config.learning_starts, target_network_update_freq=config.target_network_update_freq, buffer_size=config.buffer_size,
             prioritized_replay=config.prioritized_replay, prioritized_replay_alpha=config.prioritized_replay_alpha,
             prioritized_replay_beta0=config.prioritized_replay_beta0, atom_num=config.atom_num, min_value=config.min_value, max_value=config.max_value):
-    """
 
-    Parameters:
-    ----------
-    double_q (bool): if True double DQN will be used
-    param_noise (bool): whether or not to use parameter space noise
-    dueling (bool): if True dueling value estimation will be used
-    exploration_fraction (float): fraction of entire training period over which
-                                  the exploration rate is annealed
-    exploration_final_eps (float): final value of random action probability
-    batch_size (int): size of a batched sampled from replay buffer for training
-    train_freq (int): update the model every `train_freq` steps
-    learning_starts (int): how many steps of the model to collect transitions
-                           for before learning starts
-    target_network_update_freq (int): update the target network every
-                                      `target_network_update_freq` steps
-    buffer_size (int): size of the replay buffer
-    prioritized_replay (bool): if True prioritized replay buffer will be used.
-    prioritized_replay_alpha (float): alpha parameter for prioritized replay
-    prioritized_replay_beta0 (float): beta parameter for prioritized replay
-    atom_num (int): atom number in distributional RL for atom_num > 1
-    min_value (float): min value in distributional RL
-    max_value (float): max value in distributional RL
-
-    """
+    # create environment
+    env = gym.make(env_name)
+    
     # create network and optimizer
-    network = Network(config.input_shape, env.action_space.n, atom_num, dueling)
+    network = Network(env.action_space.n)
     optimizer = Adam(network.parameters(), 6.25e-5, eps=1.5e-4)
 
     # create target network
@@ -139,7 +53,7 @@ def learn(  env, number_timesteps,
     if atom_num > 1:
         delta_z = float(max_value - min_value) / (atom_num - 1)
         support = torch.linspace(min_value, max_value, atom_num).to(device)
-        batch_support = support.unsqueeze(0).expand(config.batch_size, config.atom_num)
+        batch_support = support.unsqueeze(0).expand(batch_size, atom_num)
 
     start_ts = time.time()
     for n_iter in range(1, number_timesteps + 1):
@@ -193,31 +107,10 @@ def learn(  env, number_timesteps,
                     temp = batch_dist_[torch.arange(batch_size), batch_action_, :]
                     b_m.scatter_add_(1, b_l.long(), temp * (b_u - b_i))
                     b_m.scatter_add_(1, b_u.long(), temp * (b_i - b_l))
-    # delta_z = float(Vmax - Vmin) / (num_atoms - 1)
-    # support = torch.linspace(Vmin, Vmax, num_atoms)
-    
-    # next_dist   = target_model(next_state).data.cpu() * support
-    # next_action = next_dist.sum(2).max(1)[1]
-    # next_action = next_action.unsqueeze(1).unsqueeze(1).expand(next_dist.size(0), 1, next_dist.size(2))
-    # next_dist   = next_dist.gather(1, next_action).squeeze(1)
-        
-    # rewards = rewards.unsqueeze(1).expand_as(next_dist)
-    # dones   = dones.unsqueeze(1).expand_as(next_dist)
-    # support = support.unsqueeze(0).expand_as(next_dist)
-    
-    # Tz = rewards + (1 - dones) * 0.99 * support
-    # Tz = Tz.clamp(min=Vmin, max=Vmax)
-    # b  = (Tz - Vmin) / delta_z
-    # l  = b.floor().long()
-    # u  = b.ceil().long()
-        
-    # offset = torch.linspace(0, (batch_size - 1) * num_atoms, batch_size).long().unsqueeze(1).expand(batch_size, num_atoms)
 
-    # proj_dist = torch.zeros(next_dist.size())    
-    # proj_dist.view(-1).index_add_(0, (l + offset).view(-1), (next_dist * (u.float() - b)).view(-1))
-    # proj_dist.view(-1).index_add_(0, (u + offset).view(-1), (next_dist * (b - l.float())).view(-1))
                 batch_log_dist = qnet(batch_obs)[torch.arange(batch_size), batch_action.squeeze(1), :]
                 kl_error = -(batch_log_dist * b_m).sum(1)
+
                 # use kl error as priorities as proposed by Rainbow
                 priorities = kl_error.detach().cpu().clamp(1e-6).numpy()
                 loss = kl_error.mean()
@@ -257,6 +150,7 @@ def _generate(device, env, qnet,
     """ Generate training batch sample """
 
     explore_steps = number_timesteps * exploration_fraction
+
     if atom_num > 1:
         vrange = torch.linspace(min_value, max_value, atom_num).to(device)
 
@@ -314,14 +208,6 @@ def huber_loss(abs_td_error):
     return flag * abs_td_error.pow(2) * 0.5 + (1 - flag) * (abs_td_error - 0.5)
 
 
-class Flatten(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return x.contiguous().view(x.size(0), -1)
-
-
 if __name__ == '__main__':
-    env = gym.make('BreakoutDeterministic-v4')
-    learn(env, 2500000)
+
+    learn()

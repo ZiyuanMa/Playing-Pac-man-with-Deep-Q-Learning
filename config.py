@@ -1,8 +1,11 @@
 
-# deep q-learning
-image_shape = (84, 84)
+# training setting
+env_name = 'BreakoutDeterministic-v4'
+training_steps = 2500000
 
-input_shape = (4, 84, 84)
+
+# deep q-learning
+
 grad_norm=10
 batch_size=32
 double_q=True
@@ -22,3 +25,5 @@ atom_num=51
 min_value=-10
 max_value=10
 n_steps = 3
+
+test_epsilon = 0.05
