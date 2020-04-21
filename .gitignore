@@ -1,4 +1,4 @@
 __pycache__
 .ipynb_checkpoints
-models
+models/MsPacman/
 test.ipynb
