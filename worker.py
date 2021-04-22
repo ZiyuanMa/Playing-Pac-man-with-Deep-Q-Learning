@@ -411,28 +411,26 @@ class Actor:
         local_buffer = self.reset()
         
         while True:
-
-            # sample action
-            action, qval = self.model.step(torch.from_numpy(np.concatenate(self.obs_history).astype(np.float32)).unsqueeze(0))
+            obs = torch.from_numpy(np.concatenate(self.obs_history).astype(np.float32)).unsqueeze(0)
+            action, qval = self.model.step(obs)
 
             if random.random() < self.epsilon:
                 action = self.env.action_space.sample()
 
-            # take action in env
+            # apply action in env
             next_obs, reward, done, _ = self.env.step(action)
+
             self.obs_history.append(next_obs)
 
-            # return data and update observation
             local_buffer.add(action, reward, next_obs, qval)
 
-            if done == False and len(local_buffer) < self.max_episode_length:
-                pass
-            else:
+            if done or len(local_buffer) == self.max_episode_length:
                 # finish and send buffer
                 if done:
                     data = local_buffer.finish()
                 else:
-                    _, q_val = self.model.step(torch.from_numpy(np.concatenate(self.obs_history).astype(np.float32)).unsqueeze(0))
+                    obs = torch.from_numpy(np.concatenate(self.obs_history).astype(np.float32)).unsqueeze(0)
+                    _, q_val = self.model.step(obs)
                     data = local_buffer.finish(q_val)
 
                 self.replay_buffer.add.remote(data)
@@ -446,12 +444,10 @@ class Actor:
             #     self.counter = 0
 
     def update_weights(self):
-        '''load weights from learner'''
-        # update network parameters
+        '''load latest weights from learner'''
         weights_id = ray.get(self.learner.get_weights.remote())
         weights = ray.get(weights_id)
         self.model.load_state_dict(weights)
-
     
     def reset(self):
         obs = self.env.reset()

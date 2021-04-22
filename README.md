@@ -1,5 +1,27 @@
-# Playing Pac-man with Deep Q-Learning
+# Ape-X (Distributed Prioritized Experience Replay)
+## introduction
+An Implementation of [Distributed Prioritized Experience Replay](https://arxiv.org/pdf/1803.00933.pdf) (Horgan et al. 2018) DQN in PyTorch and Ray.
 
-deep Q-learning with double Q-learning, dueling Q-learning, prioritized experience replay, n-step forward and distributional Q-learning
+This implementation is for multi-core single machine, works for openai gym environment.
 
-reference: https://github.com/openai/baselines/tree/master/baselines/deepq
+## How to train
+First go to config.py to adjust parameter settings if you want.
+
+Then run:
+```
+python3 train.py
+```
+## How to test
+```
+python3 test.py
+```
+you can also render the test result or plot the result.
+
+## Work in progress
+The GPU utilization is a little bit low with 16 actors, which I'm trying to fix it.
+
+
+
+
+
+
