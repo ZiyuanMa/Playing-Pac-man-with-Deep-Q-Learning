@@ -18,7 +18,7 @@ python3 test.py
 you can also render the test result or plot the result.
 
 ## Work in progress
-The GPU utilization is a little bit low with 16 actors, which I'm trying to fix it.
+The GPU utilization is a little bit low, which I'm trying to fix it.
 
 
 
