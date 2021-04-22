@@ -1,29 +1,31 @@
 
-# training setting
 env_name = 'MsPacman-v0'
-training_steps = 10000000
+frame_stack = 4
 
+#################### worker.py ####################
+lr = 1e-4
+eps = 1e-3
+grad_norm=40
+batch_size = 512
+learning_starts = 20000
+save_interval = 1000
+target_network_update_freq = 2500
+gamma = 0.99
+prioritized_replay_alpha = 0.6
+prioritized_replay_beta0 = 0.4
+forward_steps = 3  # n-step forward
+training_steps = 100000
+buffer_capacity = 524288 
+max_episode_length = 16384
+slot_capacity = 2048  # cut one episode to slots to improve the buffer utilization
 
-# deep q-learning
+#################### train.py ####################
+num_actors = 16
+base_eps = 0.4
+alpha = 0.7
+log_interval = 5
 
-grad_norm=10
-batch_size=32
-double_q=True
-buffer_size=60000
-exploration_fraction=0.1
-exploration_final_eps=0.01
-train_freq=4
-learning_starts=30000
-save_interval=50000
-target_network_update_freq=4000
-gamma=0.99
-prioritized_replay=True
-prioritized_replay_alpha=0.6
-prioritized_replay_beta0=0.4
-dueling=True
-atom_num=51
-min_value=-10
-max_value=10
-n_steps = 3
-
+#################### test.py ####################
+render = False
+save_plot = True
 test_epsilon = 0.05
