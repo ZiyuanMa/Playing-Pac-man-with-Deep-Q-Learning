@@ -76,14 +76,14 @@ class SumTree:
 
 @ray.remote(num_cpus=1)
 class ReplayBuffer:
-    def __init__(self, buffer_capacity=config.buffer_capacity, slot_capacity=config.slot_capacity,
+    def __init__(self, buffer_capacity=config.buffer_capacity, sequence_len=config.sequence_len,
                 alpha=config.prioritized_replay_alpha, beta=config.prioritized_replay_beta0,
                 batch_size=config.batch_size, frame_stack=config.frame_stack):
 
         self.buffer_capacity = buffer_capacity
-        self.slot_capacity = slot_capacity
-        self.num_slots = buffer_capacity//slot_capacity
-        self.slot_ptr = 0
+        self.sequence_len = sequence_len
+        self.num_sequences = buffer_capacity//sequence_len
+        self.seq_ptr = 0
 
         # prioritized experience replay
         self.priority_tree = SumTree(buffer_capacity)
@@ -96,11 +96,11 @@ class ReplayBuffer:
 
         self.lock = threading.Lock()
 
-        self.obs_buf = [None for _ in range(self.num_slots)]
-        self.act_buf = [None for _ in range(self.num_slots)]
-        self.rew_buf = [None for _ in range(self.num_slots)]
-        self.gamma_buf = [None for _ in range(self.num_slots)]
-        self.size_buf = np.zeros(self.num_slots, dtype=np.uint)
+        self.obs_buf = [None for _ in range(self.num_sequences)]
+        self.act_buf = [None for _ in range(self.num_sequences)]
+        self.rew_buf = [None for _ in range(self.num_sequences)]
+        self.gamma_buf = [None for _ in range(self.num_sequences)]
+        self.size_buf = np.zeros(self.num_sequences, dtype=np.uint16)
 
     def __len__(self):
         return np.sum(self.size_buf).item()
@@ -117,7 +117,7 @@ class ReplayBuffer:
                 data_id = ray.put(data)
                 self.batched_data.append(data_id)
             else:
-                time.sleep(0.1)
+                time.sleep(0.2)
 
     def get_data(self):
         '''call by learner to get batched data'''
@@ -130,29 +130,30 @@ class ReplayBuffer:
         else:
             return self.batched_data.pop(0)
 
-    def add(self, data_list: List[tuple]):
+    def add(self, sequences: List[tuple]):
         '''Call by actors to add data to replaybuffer
 
         Args:
-            data_list: tuples of data, each tuple represents a slot
+            sequences: tuples of data, each tuple represents a slot
                 in each tuple: 0 obs, 1 action, 2 reward, 3 gamma, 4 td_errors
         '''
 
         with self.lock:
-            for data in data_list:
-                idxes = np.arange(self.slot_ptr*self.slot_capacity, (self.slot_ptr+1)*self.slot_capacity)
+            for data in sequences:
+                idxes = np.arange(self.seq_ptr*self.sequence_len, (self.seq_ptr+1)*self.sequence_len)
 
                 slot_size = np.size(data[0], 0) - 4
-                self.size_buf[self.slot_ptr] = slot_size
+
+                self.size_buf[self.seq_ptr] = slot_size
 
                 self.priority_tree.batch_update(idxes, data[4]**self.alpha)
 
-                self.obs_buf[self.slot_ptr] = torch.from_numpy(data[0].astype(np.float16))
-                self.act_buf[self.slot_ptr] = torch.from_numpy(data[1].astype(np.long))
-                self.rew_buf[self.slot_ptr] = torch.from_numpy(data[2])
-                self.gamma_buf[self.slot_ptr] = torch.from_numpy(data[3])
+                self.obs_buf[self.seq_ptr] = torch.from_numpy(data[0].astype(np.float16))
+                self.act_buf[self.seq_ptr] = torch.from_numpy(data[1].astype(np.long))
+                self.rew_buf[self.seq_ptr] = torch.from_numpy(data[2])
+                self.gamma_buf[self.seq_ptr] = torch.from_numpy(data[3])
 
-                self.slot_ptr = (self.slot_ptr+1) % self.num_slots
+                self.seq_ptr = (self.seq_ptr+1) % self.num_sequences
 
     def sample_batch(self, batch_size):
         '''sample one batch of training data'''
@@ -162,8 +163,8 @@ class ReplayBuffer:
         with self.lock:
 
             idxes, priorities = self.priority_tree.batch_sample(self.batch_size)
-            global_idxes = idxes // self.slot_capacity
-            local_idxes = idxes % self.slot_capacity
+            global_idxes = idxes // self.sequence_len
+            local_idxes = idxes % self.sequence_len
 
             for global_idx, local_idx in zip(global_idxes.tolist(), local_idxes.tolist()):
                 
@@ -197,7 +198,7 @@ class ReplayBuffer:
 
                 idxes,
                 torch.from_numpy(weights.astype(np.float16)).unsqueeze(1),
-                self.slot_ptr
+                self.seq_ptr
             )
 
             return data
@@ -206,15 +207,15 @@ class ReplayBuffer:
         """Update priorities of sampled transitions"""
         with self.lock:
 
-            # discard the indices that already been discarded in replay buffer during training
-            if self.slot_ptr > old_ptr:
-                # range from [old_ptr, self.slot_ptr)
-                mask = (idxes < old_ptr*self.slot_capacity) | (idxes >= self.slot_ptr*self.slot_capacity)
+            # discard the indices that already been replaced by new data in replay buffer during training
+            if self.seq_ptr > old_ptr:
+                # range from [old_ptr, self.seq_ptr)
+                mask = (idxes < old_ptr*self.sequence_len) | (idxes >= self.seq_ptr*self.sequence_len)
                 idxes = idxes[mask]
                 priorities = priorities[mask]
-            elif self.slot_ptr < old_ptr:
-                # range from [0, self.slot_ptr) & [old_ptr, self,capacity)
-                mask = (idxes < old_ptr*self.slot_capacity) & (idxes >= self.slot_ptr*self.slot_capacity)
+            elif self.seq_ptr < old_ptr:
+                # range from [0, self.seq_ptr) & [old_ptr, self,capacity)
+                mask = (idxes < old_ptr*self.sequence_len) & (idxes >= self.seq_ptr*self.sequence_len)
                 idxes = idxes[mask]
                 priorities = priorities[mask]
 
@@ -291,7 +292,7 @@ class Learner:
             self.optimizer.zero_grad()
             scaler.scale(loss).backward()
             scaler.unscale_(self.optimizer)
-            nn.utils.clip_grad_norm_(self.model.parameters(), 40)
+            nn.utils.clip_grad_norm_(self.model.parameters(), config.grad_norm)
             scaler.step(self.optimizer)
             scaler.update()
 
@@ -333,63 +334,71 @@ class Learner:
 
 class LocalBuffer:
     '''store transition of one episode'''
-    def __init__(self, init_obs, n_step=config.forward_steps, frame_stack=config.frame_stack, slot_capacity=config.slot_capacity):
-        self.n_step = n_step
+    def __init__(self, forward_steps=config.forward_steps, frame_stack=config.frame_stack,
+                sequence_len=config.sequence_len, gamma=config.gamma):
+        self.forward_steps = forward_steps
         self.frame_stack = frame_stack
-        self.slot_capacity = slot_capacity
-        self.obs_buffer = [init_obs for _ in range(frame_stack)]
+        self.sequence_len = sequence_len
+        self.gamma = gamma
+    
+    def __len__(self):
+        return self.size
+    
+    def reset(self, init_obs):
+        self.obs_buffer = [init_obs for _ in range(self.frame_stack)]
         self.action_buffer = []
         self.reward_buffer = []
         self.qval_buffer = []
         self.size = 0
-    
-    def __len__(self):
-        return self.size
 
-    def add(self, action: int, reward: float, next_obs: np.ndarray, q_value):
+    def add(self, action: int, reward: float, next_obs: np.ndarray, q_value: np.ndarray):
         self.action_buffer.append(action)
         self.reward_buffer.append(reward)
         self.obs_buffer.append(next_obs)
         self.qval_buffer.append(q_value)
         self.size += 1
     
-    def finish(self, last_q_val=None) -> List[tuple]:
-        cumulated_gamma = [config.gamma**self.n_step for _ in range(self.size-self.n_step)]
+    def finish(self, last_q_val: np.ndarray = None) -> List[tuple]:
+        cumulated_gamma = [self.gamma**self.forward_steps for _ in range(self.size-self.forward_steps)]
 
+        # if last_q_val is None, means done
         if last_q_val:
             self.qval_buffer.append(last_q_val)
-            cumulated_gamma.extend([config.gamma**i for i in reversed(range(self.n_step))])
+            cumulated_gamma.extend([self.gamma**i for i in reversed(range(1, self.forward_steps+1))])
         else:
             self.qval_buffer.append(np.zeros_like(self.qval_buffer[-1]))
-            cumulated_gamma.extend([0 for _ in range(self.n_step)]) # set gamma to 0 so don't need 'done'
+            cumulated_gamma.extend([0 for _ in range(self.forward_steps)]) # set gamma to 0 so don't need 'done'
 
         cumulated_gamma = np.array(cumulated_gamma, dtype=np.float16)
         self.obs_buffer = np.concatenate(self.obs_buffer)
         self.action_buffer = np.array(self.action_buffer, dtype=np.uint8)
         self.qval_buffer = np.concatenate(self.qval_buffer)
-        self.reward_buffer = self.reward_buffer + [0 for _ in range(self.n_step-1)]
-        cumulated_reward = np.convolve(self.reward_buffer, [config.gamma**(self.n_step-1-i) for i in range(self.n_step)],'valid').astype(np.float16)
+        self.reward_buffer = self.reward_buffer + [0 for _ in range(self.forward_steps-1)]
+        cumulated_reward = np.convolve(self.reward_buffer, 
+                                    [self.gamma**(self.forward_steps-1-i) for i in range(self.forward_steps)],
+                                    'valid').astype(np.float16)
 
-        num_slots = self.size // self.slot_capacity + 1
+        num_sequences = self.size // self.sequence_len + 1
 
         # td_errors
-        td_errors = np.zeros(num_slots*self.slot_capacity, dtype=np.float32)
-        max_qval = np.max(self.qval_buffer[self.n_step:self.size+1], axis=1)
-        max_qval = np.concatenate((max_qval, np.array([max_qval[-1] for _ in range(self.n_step-1)])))
+        td_errors = np.zeros(num_sequences*self.sequence_len, dtype=np.float32)
+        max_qval = np.max(self.qval_buffer[self.forward_steps:self.size+1], axis=1)
+        max_qval = np.concatenate((max_qval, np.array([max_qval[-1] for _ in range(self.forward_steps-1)])))
         target_qval = self.qval_buffer[np.arange(self.size), self.action_buffer]
         td_errors[:self.size] = np.abs(cumulated_reward+max_qval-target_qval).clip(1e-4)
 
-        slots = []
-        for i in range(num_slots):
-            obs = self.obs_buffer[i*config.slot_capacity:(i+1)*config.slot_capacity+4]
-            actions = self.action_buffer[i*config.slot_capacity:(i+1)*config.slot_capacity]
-            rewards = cumulated_reward[i*config.slot_capacity:(i+1)*config.slot_capacity]
-            td_error = td_errors[i*config.slot_capacity:(i+1)*config.slot_capacity]
-            gamma = cumulated_gamma[i*config.slot_capacity:(i+1)*config.slot_capacity]
+        # cut one episode to sequences to improve the buffer space utilization
+        sequences = []
+        for i in range(0, num_sequences*self.sequence_len, self.sequence_len):
+            obs = self.obs_buffer[i:i+self.sequence_len+4]
+            actions = self.action_buffer[i:i+self.sequence_len]
+            rewards = cumulated_reward[i:i+self.sequence_len]
+            td_error = td_errors[i:i+self.sequence_len]
+            gamma = cumulated_gamma[i:i+self.sequence_len]
 
-            slots.append((obs, actions, rewards, gamma, td_error))
+            sequences.append((obs, actions, rewards, gamma, td_error))
         
-        return slots
+        return sequences
 
 @ray.remote(num_cpus=1)
 class Actor:
@@ -398,6 +407,7 @@ class Actor:
         self.env = creat_env()
         self.model = Network(self.env.action_space.n)
         self.model.eval()
+        self.local_buffer = LocalBuffer()
         
         self.obs_history = deque([], maxlen=config.frame_stack)
         self.epsilon = epsilon
@@ -408,7 +418,7 @@ class Actor:
 
     def run(self):
         done = False
-        local_buffer = self.reset()
+        self.reset()
         
         while True:
             obs = torch.from_numpy(np.concatenate(self.obs_history).astype(np.float32)).unsqueeze(0)
@@ -422,21 +432,21 @@ class Actor:
 
             self.obs_history.append(next_obs)
 
-            local_buffer.add(action, reward, next_obs, qval)
+            self.local_buffer.add(action, reward, next_obs, qval)
 
-            if done or len(local_buffer) == self.max_episode_length:
+            if done or len(self.local_buffer) == self.max_episode_length:
                 # finish and send buffer
                 if done:
-                    data = local_buffer.finish()
+                    sequences = self.local_buffer.finish()
                 else:
                     obs = torch.from_numpy(np.concatenate(self.obs_history).astype(np.float32)).unsqueeze(0)
                     _, q_val = self.model.step(obs)
-                    data = local_buffer.finish(q_val)
+                    sequences = self.local_buffer.finish(q_val)
 
-                self.replay_buffer.add.remote(data)
+                self.replay_buffer.add.remote(sequences)
                 done = False
                 self.update_weights()
-                local_buffer = self.reset()
+                self.reset()
 
             self.counter += 1
             # if self.counter == 400:
@@ -452,6 +462,5 @@ class Actor:
     def reset(self):
         obs = self.env.reset()
         self.obs_history = deque([obs for _ in range(config.frame_stack)], maxlen=config.frame_stack)
-        local_buffer = LocalBuffer(obs)
-        return local_buffer
+        self.local_buffer.reset(obs)
 

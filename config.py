@@ -7,7 +7,7 @@ lr = 1e-4
 eps = 1e-3
 grad_norm=40
 batch_size = 512
-learning_starts = 20000
+learning_starts = 50000
 save_interval = 1000
 target_network_update_freq = 2500
 gamma = 0.99
@@ -15,9 +15,9 @@ prioritized_replay_alpha = 0.6
 prioritized_replay_beta0 = 0.4
 forward_steps = 3  # n-step forward
 training_steps = 100000
-buffer_capacity = 524288 
+buffer_capacity = 131072
 max_episode_length = 16384
-slot_capacity = 2048  # cut one episode to slots to improve the buffer utilization
+sequence_len = 1024  # cut one episode to sequences to improve the buffer space utilization
 
 #################### train.py ####################
 num_actors = 16

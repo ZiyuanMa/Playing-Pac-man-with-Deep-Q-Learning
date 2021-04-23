@@ -44,3 +44,11 @@ def train(num_actors=config.num_actors, log_interval=config.log_interval):
 if __name__ == '__main__':
 
     train()
+
+#%%
+import numpy as np
+a = np.arange(12).reshape((3, 4))
+a[np.array([0,2]), ]
+
+
+# %%

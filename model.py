@@ -45,7 +45,7 @@ class Network(nn.Module):
         qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
         action = torch.argmax(qvalue, 1).item()
 
-        return action, qvalue
+        return action, qvalue.numpy()
 
     @autocast()
     def forward(self, x):
